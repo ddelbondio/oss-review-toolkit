@@ -17,7 +17,7 @@
  * License-Filename: LICENSE
  */
 
-package com.here.ort.analyzer
+package com.here.ort
 
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.utils.normalizeVcsUrl
@@ -38,7 +38,7 @@ import java.io.PrintStream
  * A test for the main entry point of the application.
  */
 class MainTest : StringSpec() {
-    private val projectDir = File("src/funTest/assets/projects/synthetic")
+    private val projectDir = File("../analyzer/src/funTest/assets/projects/synthetic")
     private val vcsDir = VersionControlSystem.forDirectory(projectDir)!!
     private val vcsUrl = vcsDir.getRemoteUrl()
     private val vcsRevision = vcsDir.getRevision()

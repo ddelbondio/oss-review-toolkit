@@ -17,7 +17,7 @@
  * License-Filename: LICENSE
  */
 
-package com.here.ort.analyzer
+package com.here.ort
 
 import ch.frankel.slf4k.*
 
@@ -26,6 +26,9 @@ import com.beust.jcommander.JCommander
 import com.beust.jcommander.Parameter
 import com.beust.jcommander.ParameterException
 
+import com.here.ort.analyzer.Analyzer
+import com.here.ort.analyzer.PackageManager
+import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.model.OutputFormat
 import com.here.ort.model.config.AnalyzerConfiguration
 import com.here.ort.utils.PARAMETER_ORDER_HELP
@@ -40,13 +43,12 @@ import java.io.File
 
 import kotlin.system.exitProcess
 
+const val TOOL_NAME = "ort"
+
 /**
  * The main entry point of the application.
  */
 object Main {
-    const val TOOL_NAME = "analyzer"
-    const val HTTP_CACHE_PATH = "$TOOL_NAME/cache/http"
-
     private class PackageManagerConverter : IStringConverter<PackageManagerFactory<PackageManager>> {
         companion object {
             // Map upper-cased package manager class names to their instances.

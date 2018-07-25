@@ -43,6 +43,12 @@ import com.here.ort.utils.log
 import java.io.File
 import java.util.SortedSet
 
+const val TOOL_NAME = "analyzer"
+const val HTTP_CACHE_PATH = "$TOOL_NAME/cache/http"
+
+/**
+ * The class to run the analysis. The signatures of public functions in this class define the library API.
+ */
 class Analyzer {
     fun analyze(config: AnalyzerConfiguration, absoluteProjectPath: File,
                 packageManagers: List<PackageManagerFactory<PackageManager>> = PackageManager.ALL,

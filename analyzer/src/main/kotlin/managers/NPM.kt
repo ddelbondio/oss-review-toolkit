@@ -24,9 +24,10 @@ import ch.frankel.slf4k.*
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 
-import com.here.ort.analyzer.Main
+import com.here.ort.analyzer.HTTP_CACHE_PATH
 import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.analyzer.TOOL_NAME
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.Error
 import com.here.ort.model.HashAlgorithm
@@ -137,7 +138,7 @@ open class NPM(config: AnalyzerConfiguration) : PackageManager(config) {
             // Temporarily move away any existing "node_modules" directory within the same filesystem to ensure
             // the move can be performed atomically.
             if (modulesDir.isDirectory) {
-                val tempDir = createTempDir(Main.TOOL_NAME, ".tmp", workingDir)
+                val tempDir = createTempDir(TOOL_NAME, ".tmp", workingDir)
                 tempModulesDir = File(tempDir, "node_modules")
                 log.warn { "'$modulesDir' already exists, temporarily moving it to '$tempModulesDir'." }
                 Files.move(modulesDir.toPath(), tempModulesDir.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -235,7 +236,7 @@ open class NPM(config: AnalyzerConfiguration) : PackageManager(config) {
                     .url("https://registry.npmjs.org/$encodedName")
                     .build()
 
-            OkHttpClientHelper.execute(Main.HTTP_CACHE_PATH, pkgRequest).use { response ->
+            OkHttpClientHelper.execute(HTTP_CACHE_PATH, pkgRequest).use { response ->
                 if (response.code() == HttpURLConnection.HTTP_OK) {
                     log.debug {
                         if (response.cacheResponse() != null) {

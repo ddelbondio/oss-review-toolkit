@@ -24,9 +24,9 @@ import ch.frankel.slf4k.*
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 
-import com.here.ort.analyzer.Main
 import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.analyzer.TOOL_NAME
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.Error
 import com.here.ort.model.HashAlgorithm
@@ -113,7 +113,7 @@ class PhpComposer(config: AnalyzerConfiguration) : PackageManager(config) {
 
         try {
             if (vendorDir.isDirectory) {
-                val tempDir = createTempDir(Main.TOOL_NAME, ".tmp", workingDir)
+                val tempDir = createTempDir(TOOL_NAME, ".tmp", workingDir)
                 tempVendorDir = File(tempDir, "composer_vendor")
                 log.warn { "'$vendorDir' already exists, temporarily moving it to '$tempVendorDir'." }
                 Files.move(vendorDir.toPath(), tempVendorDir.toPath(), StandardCopyOption.ATOMIC_MOVE)

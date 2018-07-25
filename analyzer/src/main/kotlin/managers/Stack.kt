@@ -21,7 +21,7 @@ package com.here.ort.analyzer.managers
 
 import ch.frankel.slf4k.*
 
-import com.here.ort.analyzer.Main
+import com.here.ort.analyzer.HTTP_CACHE_PATH
 import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
 import com.here.ort.downloader.VersionControlSystem
@@ -206,7 +206,7 @@ class Stack(config: AnalyzerConfiguration) : PackageManager(config) {
                 .url("${getPackageUrl(pkg.id.name, pkg.id.version)}/src/${pkg.id.name}.cabal")
                 .build()
 
-        return OkHttpClientHelper.execute(Main.HTTP_CACHE_PATH, pkgRequest).use { response ->
+        return OkHttpClientHelper.execute(HTTP_CACHE_PATH, pkgRequest).use { response ->
             val body = response.body()?.string()?.trim()
 
             if (response.code() != HttpURLConnection.HTTP_OK || body.isNullOrEmpty()) {
