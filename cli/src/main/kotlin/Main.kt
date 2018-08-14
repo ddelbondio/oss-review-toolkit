@@ -30,15 +30,29 @@ import com.beust.jcommander.Parameters
 import com.here.ort.analyzer.Analyzer
 import com.here.ort.analyzer.PackageManager
 import com.here.ort.analyzer.PackageManagerFactory
+import com.here.ort.downloader.DownloadException
+import com.here.ort.downloader.Downloader
+import com.here.ort.model.AnalyzerResult
+import com.here.ort.model.HashAlgorithm
+import com.here.ort.model.Identifier
 import com.here.ort.model.OutputFormat
+import com.here.ort.model.Package
+import com.here.ort.model.RemoteArtifact
+import com.here.ort.model.VcsInfo
 import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.readValue
+import com.here.ort.utils.ARCHIVE_EXTENSIONS
 import com.here.ort.utils.PARAMETER_ORDER_HELP
 import com.here.ort.utils.PARAMETER_ORDER_LOGGING
 import com.here.ort.utils.PARAMETER_ORDER_MANDATORY
 import com.here.ort.utils.PARAMETER_ORDER_OPTIONAL
+import com.here.ort.utils.encodeOrUnknown
 import com.here.ort.utils.log
+import com.here.ort.utils.packZip
 import com.here.ort.utils.printStackTrace
+import com.here.ort.utils.safeDeleteRecursively
 import com.here.ort.utils.safeMkdirs
+import com.here.ort.utils.showStackTrace
 
 import java.io.File
 
@@ -161,6 +175,158 @@ object Main {
         }
     }
 
+    @Parameters(commandNames = ["download"], commandDescription = "Fetch source code from a remote location.")
+    private object DownloaderCommand : Runnable {
+        @Parameter(description = "A dependencies analysis file to use. Must not be used together with '--project-url'.",
+                names = ["--dependencies-file", "-d"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var dependenciesFile: File? = null
+
+        @Parameter(description = "A VCS or archive URL of a project to download. Must not be used together with " +
+                "'--dependencies-file'.",
+                names = ["--project-url"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var projectUrl: String? = null
+
+        @Parameter(description = "The speaking name of the project to download. Will be ignored if " +
+                "'--dependencies-file' is also specified.",
+                names = ["--project-name"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var projectName: String? = null
+
+        @Parameter(description = "The VCS type if '--project-url' points to a VCS. Will be ignored if " +
+                "'--dependencies-file' is also specified.",
+                names = ["--vcs-type"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var vcsType = ""
+
+        @Parameter(description = "The VCS revision if '--project-url' points to a VCS. Will be ignored if " +
+                "'--dependencies-file' is also specified.",
+                names = ["--vcs-revision"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var vcsRevision = ""
+
+        @Parameter(description = "The VCS path if '--project-url' points to a VCS. Will be ignored if " +
+                "'--dependencies-file' is also specified.",
+                names = ["--vcs-path"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var vcsPath = ""
+
+        @Parameter(description = "The output directory to download the source code to.",
+                names = ["--output-dir", "-o"],
+                required = true,
+                order = PARAMETER_ORDER_MANDATORY)
+        @Suppress("LateinitUsage")
+        private lateinit var outputDir: File
+
+        @Parameter(description = "Archive the downloaded source code as ZIP files.",
+                names = ["--archive", "-a"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var archive = false
+
+        @Parameter(description = "The data entities from the dependencies analysis file to download.",
+                names = ["--entities", "-e"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var entities = enumValues<Downloader.DataEntity>().asList()
+
+        @Parameter(description = "Allow the download of moving revisions (like e.g. HEAD or master in Git). By " +
+                "default these revision are forbidden because they are not pointing to a stable revision of the " +
+                "source code.",
+                names = ["--allow-moving-revisions"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var allowMovingRevisions = false
+
+        override fun run() {
+            if ((dependenciesFile != null) == (projectUrl != null)) {
+                throw IllegalArgumentException(
+                        "Either '--dependencies-file' or '--project-url' must be specified.")
+            }
+
+            val packages = dependenciesFile?.let {
+                require(it.isFile) {
+                    "Provided path is not a file: ${it.absolutePath}"
+                }
+
+                val analyzerResult = it.readValue(AnalyzerResult::class.java)
+
+                mutableListOf<Package>().apply {
+                    if (Downloader.DataEntity.PROJECT in entities) {
+                        Downloader().consolidateProjectPackagesByVcs(analyzerResult.projects).let {
+                            addAll(it.keys)
+                        }
+                    }
+
+                    if (Downloader.DataEntity.PACKAGES in entities) {
+                        addAll(analyzerResult.packages.map { it.pkg })
+                    }
+                }
+            } ?: run {
+                allowMovingRevisions = true
+
+                val projectFile = File(projectUrl)
+                if (projectName == null) {
+                    projectName = projectFile.nameWithoutExtension
+                }
+
+                val dummyId = Identifier.EMPTY.copy(name = projectName!!)
+                val dummyPackage = if (ARCHIVE_EXTENSIONS.any { projectFile.name.endsWith(it) }) {
+                    Package.EMPTY.copy(
+                            id = dummyId,
+                            sourceArtifact = RemoteArtifact(
+                                    url = projectUrl!!,
+                                    hash = "",
+                                    hashAlgorithm = HashAlgorithm.UNKNOWN
+                            )
+                    )
+                } else {
+                    val vcs = VcsInfo(type = vcsType, url = projectUrl!!, revision = vcsRevision, path = vcsPath)
+                    Package.EMPTY.copy(id = dummyId, vcs = vcs, vcsProcessed = vcs.normalize())
+                }
+
+                listOf(dummyPackage)
+            }
+
+            var error = false
+
+            packages.forEach { pkg ->
+                try {
+                    val result = Downloader().download(pkg, outputDir)
+
+                    if (archive) {
+                        val zipFile = File(outputDir,
+                                "${pkg.id.provider.encodeOrUnknown()}-${pkg.id.namespace.encodeOrUnknown()}-" +
+                                        "${pkg.id.name.encodeOrUnknown()}-${pkg.id.version.encodeOrUnknown()}.zip")
+
+                        log.info {
+                            "Archiving directory '${result.downloadDirectory.absolutePath}' to " +
+                                    "'${zipFile.absolutePath}'."
+                        }
+
+                        try {
+                            result.downloadDirectory.packZip(zipFile,
+                                    "${pkg.id.name.encodeOrUnknown()}/${pkg.id.version.encodeOrUnknown()}/")
+                        } catch (e: IllegalArgumentException) {
+                            e.showStackTrace()
+
+                            log.error { "Could not archive '${pkg.id}': ${e.message}" }
+                        } finally {
+                            val relativePath = outputDir.toPath().relativize(result.downloadDirectory.toPath()).first()
+                            File(outputDir, relativePath.toString()).safeDeleteRecursively()
+                        }
+                    }
+                } catch (e: DownloadException) {
+                    e.showStackTrace()
+
+                    log.error { "Could not download '${pkg.id}': ${e.message}" }
+
+                    error = true
+                }
+            }
+
+            if (error) exitProcess(1)
+        }
+    }
+
     /**
      * The entry point for the application.
      *
@@ -171,6 +337,7 @@ object Main {
         val jc = JCommander(this).apply {
             programName = TOOL_NAME
             addCommand(AnalyzerCommand)
+            addCommand(DownloaderCommand)
             parse(*args)
         }
 

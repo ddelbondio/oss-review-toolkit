@@ -26,7 +26,7 @@ import com.beust.jcommander.JCommander
 import com.beust.jcommander.Parameter
 import com.beust.jcommander.ParameterException
 
-import com.here.ort.downloader.consolidateProjectPackagesByVcs
+import com.here.ort.downloader.Downloader
 import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.Environment
 import com.here.ort.model.Error
@@ -218,7 +218,7 @@ object Main {
         val analyzerResult = ortResult.analyzer!!.result
 
         // Add the projects as packages to scan.
-        val consolidatedProjectPackageMap = consolidateProjectPackagesByVcs(analyzerResult.projects)
+        val consolidatedProjectPackageMap = Downloader().consolidateProjectPackagesByVcs(analyzerResult.projects)
         val consolidatedReferencePackages = consolidatedProjectPackageMap.keys.map { it.toCuratedPackage() }
 
         val projectScanScopes = if (scopesToScan.isNotEmpty()) {
