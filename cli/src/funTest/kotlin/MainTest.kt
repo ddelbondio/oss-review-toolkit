@@ -63,6 +63,7 @@ class MainTest : StringSpec() {
             System.setOut(PrintStream(streamOut))
 
             Main.main(arrayOf(
+                    "analyze",
                     "-m", "Gradle",
                     "-i", inputDir.path,
                     "-o", File(outputDir, "gradle").path
@@ -85,6 +86,7 @@ class MainTest : StringSpec() {
             System.setOut(PrintStream(streamOut))
 
             Main.main(arrayOf(
+                    "analyze",
                     "-m", "NPM",
                     "-i", inputDir.path,
                     "-o", File(outputDir, "package-lock").path
@@ -109,6 +111,7 @@ class MainTest : StringSpec() {
             )
 
             Main.main(arrayOf(
+                    "analyze",
                     "-m", "Gradle",
                     "-i", File(projectDir, "gradle").absolutePath,
                     "-o", analyzerOutputDir.path
@@ -133,6 +136,7 @@ class MainTest : StringSpec() {
             // the feature because JCommander just switches the value of boolean options, and the option was already set
             // to true by the test before. See: https://github.com/cbeust/jcommander/issues/378
             Main.main(arrayOf(
+                    "analyze",
                     "-m", "Gradle",
                     "-i", File(projectDir, "gradle").absolutePath,
                     "-o", analyzerOutputDir.path,
