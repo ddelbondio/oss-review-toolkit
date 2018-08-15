@@ -36,11 +36,14 @@ import com.here.ort.model.AnalyzerResult
 import com.here.ort.model.HashAlgorithm
 import com.here.ort.model.Identifier
 import com.here.ort.model.OutputFormat
+import com.here.ort.model.OrtResult
 import com.here.ort.model.Package
 import com.here.ort.model.RemoteArtifact
 import com.here.ort.model.VcsInfo
 import com.here.ort.model.config.AnalyzerConfiguration
 import com.here.ort.model.readValue
+import com.here.ort.reporter.Reporter
+import com.here.ort.reporter.reporters.*
 import com.here.ort.utils.ARCHIVE_EXTENSIONS
 import com.here.ort.utils.PARAMETER_ORDER_HELP
 import com.here.ort.utils.PARAMETER_ORDER_LOGGING
@@ -327,6 +330,54 @@ object Main {
         }
     }
 
+    @Parameters(commandNames = ["report"],
+            commandDescription = "Present Analyzer and Scanner results in various formats.")
+    private object ReporterCommand : Runnable {
+        private enum class ReportFormat(private val reporter: Reporter) : Reporter {
+            EXCEL(ExcelReporter()),
+            NOTICE(NoticeReporter()),
+            STATIC_HTML(StaticHtmlReporter());
+
+            override fun generateReport(ortResult: OrtResult, outputDir: File) =
+                    reporter.generateReport(ortResult, outputDir)
+        }
+
+        @Parameter(description = "The ort result file to use. Must contain a scan record.",
+                names = ["--ort-result-file", "-i"],
+                required = true,
+                order = PARAMETER_ORDER_MANDATORY)
+        private lateinit var ortResultFile: File
+
+        @Parameter(description = "The output directory to store the generated reports in.",
+                names = ["--output-dir", "-o"],
+                required = true,
+                order = PARAMETER_ORDER_MANDATORY)
+        @Suppress("LateinitUsage")
+        private lateinit var outputDir: File
+
+        @Parameter(description = "The list of report formats that will be generated.",
+                names = ["--report-formats", "-f"],
+                required = true,
+                order = PARAMETER_ORDER_MANDATORY)
+        private lateinit var reportFormats: List<ReportFormat>
+
+        override fun run() {
+            require(!outputDir.exists()) {
+                "The output directory '${outputDir.absolutePath}' must not exist yet."
+            }
+
+            outputDir.safeMkdirs()
+
+            val ortResult = ortResultFile.let {
+                it.readValue(OrtResult::class.java)
+            }
+
+            reportFormats.forEach {
+                it.generateReport(ortResult, outputDir)
+            }
+        }
+    }
+
     /**
      * The entry point for the application.
      *
@@ -338,6 +389,7 @@ object Main {
             programName = TOOL_NAME
             addCommand(AnalyzerCommand)
             addCommand(DownloaderCommand)
+            addCommand(ReporterCommand)
             parse(*args)
         }
 
