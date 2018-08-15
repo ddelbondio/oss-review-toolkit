@@ -41,9 +41,14 @@ import com.here.ort.model.Package
 import com.here.ort.model.RemoteArtifact
 import com.here.ort.model.VcsInfo
 import com.here.ort.model.config.AnalyzerConfiguration
+import com.here.ort.model.config.ScannerConfiguration
 import com.here.ort.model.readValue
 import com.here.ort.reporter.Reporter
 import com.here.ort.reporter.reporters.*
+import com.here.ort.scanner.LocalScanner
+import com.here.ort.scanner.ScanResultsCache
+import com.here.ort.scanner.Scanner
+import com.here.ort.scanner.scanners.*
 import com.here.ort.utils.ARCHIVE_EXTENSIONS
 import com.here.ort.utils.PARAMETER_ORDER_HELP
 import com.here.ort.utils.PARAMETER_ORDER_LOGGING
@@ -378,6 +383,114 @@ object Main {
         }
     }
 
+    @Parameters(commandNames = ["scan"], commandDescription = "Run existing copyright / license scanners.")
+    private object ScannerCommand : Runnable {
+        private class ScannerConverter : IStringConverter<Scanner> {
+            override fun convert(scannerName: String): Scanner {
+                // TODO: Consider allowing to enable multiple scanners (and potentially running them in parallel).
+                return Scanner.ALL.find { it.toString().equals(scannerName, true) }
+                        ?: throw ParameterException("The scanner must be one of ${Scanner.ALL}.")
+            }
+        }
+
+        @Parameter(description = "The dependencies analysis file to use. Source code will be downloaded " +
+                "automatically if needed. This parameter and --input-path are mutually exclusive.",
+                names = ["--dependencies-file", "-d"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var dependenciesFile: File? = null
+
+        @Parameter(description = "The input directory or file to scan. This parameter and --dependencies-file are " +
+                "mutually exclusive.",
+                names = ["--input-path", "-i"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var inputPath: File? = null
+
+        @Parameter(description = "The list of scopes that shall be scanned. Works only with the " +
+                "--dependencies-file parameter. If empty, all scopes are scanned.",
+                names = ["--scopes"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var scopesToScan = listOf<String>()
+
+        @Parameter(description = "The output directory to store the scan results in.",
+                names = ["--output-dir", "-o"],
+                required = true,
+                order = PARAMETER_ORDER_MANDATORY)
+        @Suppress("LateinitUsage")
+        private lateinit var outputDir: File
+
+        @Parameter(description = "The output directory for downloaded source code. Defaults to <output-dir>/downloads.",
+                names = ["--download-dir"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var downloadDir: File? = null
+
+        @Parameter(description = "The scanner to use.",
+                names = ["--scanner", "-s"],
+                converter = ScannerConverter::class,
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var scanner: Scanner = ScanCode
+
+        @Parameter(description = "The path to the configuration file.",
+                names = ["--config", "-c"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        @Suppress("LateinitUsage")
+        private var configFile: File? = null
+
+        @Parameter(description = "The list of output formats used for the result file(s).",
+                names = ["--output-formats", "-f"],
+                order = PARAMETER_ORDER_OPTIONAL)
+        private var outputFormats = listOf(OutputFormat.YAML)
+
+        override fun run() {
+            require((dependenciesFile == null) != (inputPath == null)) {
+                "Either --dependencies-file or --input-path must be specified."
+            }
+
+            require(!outputDir.exists()) {
+                "The output directory '${outputDir.absolutePath}' must not exist yet."
+            }
+
+            downloadDir?.let {
+                require(!it.exists()) {
+                    "The download directory '${it.absolutePath}' must not exist yet."
+                }
+            }
+
+            val config = configFile?.let {
+                require(it.isFile) {
+                    "Provided configuration file is not a file: ${it.invariantSeparatorsPath}"
+                }
+
+                it.readValue(ScannerConfiguration::class.java)
+            } ?: ScannerConfiguration()
+
+            config.artifactoryCache?.let {
+                ScanResultsCache.configure(it)
+            }
+
+            println("Using scanner '$scanner'.")
+
+            val ortResult = if (dependenciesFile != null) {
+                scanner.scanDependenciesFile(dependenciesFile!!, scopesToScan, downloadDir, outputDir, outputFormats,
+                        config)
+            } else {
+                require(scanner is LocalScanner) {
+                    "To scan local files the chosen scanner must be a local scanner."
+                }
+
+                println("Scanning path '${inputPath!!.absolutePath}'...")
+
+                val localScanner = scanner as LocalScanner
+                localScanner.scanInputPath(inputPath!!, outputDir, config)
+            }
+
+            outputFormats.forEach { format ->
+                val scanRecordFile = File(outputDir, "scan-result.${format.fileExtension}")
+                println("Writing scan record to '${scanRecordFile.absolutePath}'.")
+                format.mapper.writerWithDefaultPrettyPrinter().writeValue(scanRecordFile, ortResult)
+            }
+        }
+    }
+
     /**
      * The entry point for the application.
      *
@@ -390,6 +503,7 @@ object Main {
             addCommand(AnalyzerCommand)
             addCommand(DownloaderCommand)
             addCommand(ReporterCommand)
+            addCommand(ScannerCommand)
             parse(*args)
         }
 

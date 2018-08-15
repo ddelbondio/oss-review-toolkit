@@ -25,13 +25,23 @@ import com.fasterxml.jackson.databind.JsonNode
 
 import com.here.ort.downloader.DownloadException
 import com.here.ort.downloader.Downloader
+import com.here.ort.downloader.VersionControlSystem
 import com.here.ort.model.EMPTY_JSON_NODE
+import com.here.ort.model.Environment
 import com.here.ort.model.Error
+import com.here.ort.model.Identifier
+import com.here.ort.model.OrtResult
 import com.here.ort.model.Package
 import com.here.ort.model.Provenance
+import com.here.ort.model.Repository
+import com.here.ort.model.ScanRecord
 import com.here.ort.model.ScanResult
+import com.here.ort.model.ScanResultContainer
 import com.here.ort.model.ScanSummary
 import com.here.ort.model.ScannerDetails
+import com.here.ort.model.ScannerRun
+import com.here.ort.model.config.RepositoryConfiguration
+import com.here.ort.model.config.ScannerConfiguration
 import com.here.ort.model.mapper
 import com.here.ort.utils.collectMessages
 import com.here.ort.utils.getPathFromEnvironment
@@ -208,6 +218,38 @@ abstract class LocalScanner : Scanner() {
         ScanResultsCache.add(pkg.id, scanResult)
 
         return listOf(scanResult)
+    }
+
+    fun scanInputPath(inputPath: File, outputDirectory: File, config: ScannerConfiguration): OrtResult {
+        require(inputPath.exists()) {
+            "Provided path does not exist: ${inputPath.absolutePath}"
+        }
+
+        val result = try {
+            scanPath(inputPath, outputDirectory).also {
+                println("Detected licenses for path '${inputPath.absolutePath}': ${it.summary.licenses.joinToString()}")
+            }
+        } catch (e: ScanException) {
+            e.showStackTrace()
+
+            log.error { "Could not scan path '${inputPath.absolutePath}': ${e.message}" }
+
+            val now = Instant.now()
+            val summary = ScanSummary(now, now, 0, sortedSetOf(),
+                    e.collectMessages().map { Error(source = toString(), message = it) })
+            ScanResult(Provenance(now), getDetails(), summary)
+        }
+
+        val scanResultContainer = ScanResultContainer(Identifier("", "", inputPath.absolutePath, ""), listOf(result))
+
+        val scanRecord = ScanRecord(sortedSetOf(), sortedSetOf(scanResultContainer), ScanResultsCache.stats)
+
+        val scannerRun = ScannerRun(Environment(), config, scanRecord)
+
+        val vcs = VersionControlSystem.getCloneInfo(inputPath)
+        val repository = Repository(vcs, vcs.normalize(), RepositoryConfiguration(null))
+
+        return OrtResult(repository, scanner = scannerRun)
     }
 
     /**

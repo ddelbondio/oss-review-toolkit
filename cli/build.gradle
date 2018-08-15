@@ -17,6 +17,7 @@ dependencies {
     compile project(':downloader')
     compile project(':model')
     compile project(':reporter')
+    compile project(':scanner')
     compile project(':utils')
 
     compile "com.beust:jcommander:$jcommanderVersion"
